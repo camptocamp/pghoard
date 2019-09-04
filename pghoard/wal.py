@@ -74,6 +74,16 @@ def get_next_wal_on_same_timeline(wal):
     return '%s%08X%08X' % (timeline, segment_high, segment_low)
 
 
+def is_before(a, b):
+    timeline_a = a[0:8]
+    timeline_b = b[0:8]
+    if timeline_a != timeline_b:
+        raise Exception("Timeline does not match")
+    a_int = int(a[8:16], 16) * 0x100 + int(a[16:24], 16)
+    b_int = int(b[8:16], 16) * 0x100 + int(b[16:24], 16)
+    return a_int < b_int
+
+
 def name_for_tli_log_seg(tli, log, seg):
     return "{:08X}{:08X}{:08X}".format(tli, log, seg)
 
