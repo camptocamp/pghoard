@@ -456,10 +456,6 @@ class PGHoard:
         # get_current_wal_from_identify_system(conn_str):
         # get_current_wal_file(node_info):
 
-        # Search for WAL segment before the first basebackup
-        current_xlog = basebackups[0]["metadata"]["start-wal-segment"]
-
-
         if oldest_valid_basebackup is not None:
             print("Oldest valid basebackup: %s"
                   % oldest_valid_basebackup['metadata']["start-time"])
