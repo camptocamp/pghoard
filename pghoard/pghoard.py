@@ -420,13 +420,18 @@ class PGHoard:
         continious_wal = 0
         oldest_valid_basebackup = None
         valid_basebackup_count = 0
-        useful_wals = set()
+        useless_wals = set()
         for basebackup in basebackups:
             print('Check basebackup %s %s' % (basebackup["metadata"]["start-wal-segment"],
                                               basebackup["metadata"]["start-time"]))
             if current_xlog is None:
                 # Maybe we need to increment, Do we need the start wal segment or next segment ?
                 current_xlog = basebackup["metadata"]["start-wal-segment"]
+
+                # Search for WAL segment before the first basebackup
+                for xlog in xlogs_names:
+                    if wal.is_before(xlog, current_xlog):
+                        useless_wals.add(xlog)
                 continue
             if oldest_valid_basebackup is None:
                 oldest_valid_basebackup = basebackup
@@ -436,7 +441,6 @@ class PGHoard:
                 if current_xlog in xlogs_names:
                     print('Wal segment found : %s' % current_xlog)
                     continious_wal = continious_wal + 1
-                    useful_wals.add(current_xlog)
                 else:
                     print('Wal NOT segment found : %s' % current_xlog)
                     missing_wal = missing_wal + 1
@@ -451,6 +455,10 @@ class PGHoard:
         # Now we need to test wal segment to the current master position - 1
         # get_current_wal_from_identify_system(conn_str):
         # get_current_wal_file(node_info):
+
+        # Search for WAL segment before the first basebackup
+        current_xlog = basebackups[0]["metadata"]["start-wal-segment"]
+
 
         if oldest_valid_basebackup is not None:
             print("Oldest valid basebackup: %s"
@@ -470,17 +478,17 @@ class PGHoard:
         self.metrics.gauge("pghoard.valid_basebackup_count",
                            valid_basebackup_count,
                            tags={"site": site})
-        print("Usefull wal: %s/%s" % (len(useful_wals), len(xlogs_names)))
+        print("Usefull wal: %s/%s" % (len(xlogs_names) - len(useless_wals), len(xlogs_names)))
         self.metrics.gauge("pghoard.useful_remote_wal_count",
-                           len(useful_wals),
+                           len(xlogs_names) - len(useless_wals),
                            tags={"site": site})
         self.metrics.gauge("pghoard.total_remote_wal_count",
                            len(xlogs_names),
                            tags={"site": site})
 
-        print("We can delete %s Wal segment" % len(xlogs_names - useful_wals))
+        print("We can delete %s Wal segment" % len(useless_wals))
         storage = self.site_transfers.get(site)
-        for useless_wal in xlogs_names - useful_wals:
+        for useless_wal in useless_wals:
             wal_path = os.path.join(remote_wal_dir, useless_wal)
             self.log.debug("Deleting wal_file: %r", wal_path)
             try:
