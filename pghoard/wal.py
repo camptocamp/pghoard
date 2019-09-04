@@ -66,6 +66,14 @@ def get_previous_wal_on_same_timeline(seg, log, pg_version):
     return seg, log
 
 
+def get_next_wal_on_same_timeline(wal):
+    timeline = wal[0:8]
+    segment_low = int(wal[16:24], 16) + 1
+    segment_high = int(wal[8:16], 16) + (segment_low // 0x100)
+    segment_low = segment_low % 0x100
+    return '%s%08X%08X' % (timeline, segment_high, segment_low)
+
+
 def name_for_tli_log_seg(tli, log, seg):
     return "{:08X}{:08X}{:08X}".format(tli, log, seg)
 

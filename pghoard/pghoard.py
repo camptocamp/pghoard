@@ -317,6 +317,21 @@ class PGHoard:
         results.sort(key=lambda entry: entry["metadata"]["start-time"])
         return results
 
+    def get_remote_xlogs_info(self, site):
+        storage = self.site_transfers.get(site)
+        if not storage:
+            storage_config = get_object_storage_config(self.config, site)
+            storage = get_transfer(storage_config)
+            self.site_transfers[site] = storage
+
+        site_config = self.config["backup_sites"][site]
+        results = storage.list_path(os.path.join(site_config["prefix"], "xlog"), with_metadata=False)
+        #for entry in results:
+        #    self.patch_basebackup_info(entry=entry, site_config=site_config)
+
+        #results.sort(key=lambda entry: entry["metadata"]["start-time"])
+        return results
+
     def patch_basebackup_info(self, *, entry, site_config):
         # drop path from resulting list and convert timestamps
         entry["name"] = os.path.basename(entry["name"])
@@ -392,6 +407,87 @@ class PGHoard:
                     self.delete_remote_wal_before(last_wal_segment_still_needed, site, pg_version)
                 self.delete_remote_basebackup(site, basebackup_to_be_deleted["name"], basebackup_to_be_deleted["metadata"])
         self.state["backup_sites"][site]["basebackups"] = basebackups
+
+    def check_wal_segment_gap(self, site):
+        """Look up basebackups from the object store, prune any extra
+        backups and return the datetime of the latest backup."""
+        basebackups = self.get_remote_basebackups_info(site)
+        xlogs = self.get_remote_xlogs_info(site)
+        xlogs_names = set([os.path.basename(x['name']) for x in xlogs])
+        remote_wal_dir = os.path.join(self.config["backup_sites"][site]["prefix"], "xlog")
+        current_xlog = None
+        missing_wal = 0
+        continious_wal = 0
+        oldest_valid_basebackup = None
+        valid_basebackup_count = 0
+        useful_wals = set()
+        for basebackup in basebackups:
+            print('Check basebackup %s %s' % (basebackup["metadata"]["start-wal-segment"],
+                                              basebackup["metadata"]["start-time"]))
+            if current_xlog is None:
+                # Maybe we need to increment, Do we need the start wal segment or next segment ?
+                current_xlog = basebackup["metadata"]["start-wal-segment"]
+                continue
+            if oldest_valid_basebackup is None:
+                oldest_valid_basebackup = basebackup
+            valid_basebackup_count = valid_basebackup_count + 1
+
+            while current_xlog != basebackup["metadata"]["start-wal-segment"]:
+                if current_xlog in xlogs_names:
+                    print('Wal segment found : %s' % current_xlog)
+                    continious_wal = continious_wal + 1
+                    useful_wals.add(current_xlog)
+                else:
+                    print('Wal NOT segment found : %s' % current_xlog)
+                    missing_wal = missing_wal + 1
+                    continious_wal = 0
+                    oldest_valid_basebackup = None
+                    valid_basebackup_count = 0
+                    self.log.error("Missing Wal segment in archive : %s"
+                                   % os.path.join(remote_wal_dir,
+                                                  current_xlog))
+                current_xlog = wal.get_next_wal_on_same_timeline(current_xlog)
+
+        # Now we need to test wal segment to the current master position - 1
+        # get_current_wal_from_identify_system(conn_str):
+        # get_current_wal_file(node_info):
+
+        if oldest_valid_basebackup is not None:
+            print("Oldest valid basebackup: %s"
+                  % oldest_valid_basebackup['metadata']["start-time"])
+            self.metrics.gauge("pghoard.oldest_valid_basebackup",
+                               oldest_valid_basebackup['metadata']["start-time"].timestamp(),
+                               tags={"site": site})
+        print("Missing Wal segments: %s" % missing_wal)
+        self.metrics.gauge("pghoard.missing_remote_wal_segment",
+                           missing_wal,
+                           tags={"site": site})
+        print("Continious Wal segments: %s" % continious_wal)
+        self.metrics.gauge("pghoard.continious_wal",
+                           continious_wal,
+                           tags={"site": site})
+        print("Valid basebackup count: %s" % valid_basebackup_count)
+        self.metrics.gauge("pghoard.valid_basebackup_count",
+                           valid_basebackup_count,
+                           tags={"site": site})
+        print("Usefull wal: %s/%s" % (len(useful_wals), len(xlogs_names)))
+        self.metrics.gauge("pghoard.useful_remote_wal_count",
+                           len(useful_wals),
+                           tags={"site": site})
+        self.metrics.gauge("pghoard.total_remote_wal_count",
+                           len(xlogs_names),
+                           tags={"site": site})
+
+        print("We can delete %s Wal segment" % len(xlogs_names - useful_wals))
+        storage = self.site_transfers.get(site)
+        for useless_wal in xlogs_names - useful_wals:
+            wal_path = os.path.join(remote_wal_dir, useless_wal)
+            self.log.debug("Deleting wal_file: %r", wal_path)
+            try:
+                print("We should delete %s" % wal_path)
+                # storage.delete_key(wal_path)
+            except FileNotFoundFromStorageError:
+                self.log.info("Could not delete wal_file: %r, returning", wal_path)
 
     def get_normalized_backup_time(self, site_config, *, now=None):
         """Returns the closest historical backup time that current time matches to (or current time if it matches).
@@ -504,6 +600,8 @@ class PGHoard:
     def handle_site(self, site, site_config):
         self.set_state_defaults(site)
         xlog_path, basebackup_path = self.create_backup_site_paths(site)
+
+        self.check_wal_segment_gap(site)
 
         if not site_config["active"]:
             return  # If a site has been marked inactive, don't bother checking anything
