@@ -90,6 +90,9 @@ class PGHoard:
         signal.signal(signal.SIGTERM, self.quit)
         self.time_of_last_backup_check = {}
         self.requested_basebackup_sites = set()
+        # Keep track of remote xlog
+        self.remote_xlog = {}
+        self.remote_basebackup = {}
 
         self.inotify = InotifyWatcher(self.compression_queue)
         self.webserver = WebServer(
@@ -326,11 +329,7 @@ class PGHoard:
 
         site_config = self.config["backup_sites"][site]
         results = storage.list_path(os.path.join(site_config["prefix"], "xlog"), with_metadata=False)
-        #for entry in results:
-        #    self.patch_basebackup_info(entry=entry, site_config=site_config)
-
-        #results.sort(key=lambda entry: entry["metadata"]["start-time"])
-        return results
+        return [os.path.basename(x['name']) for x in results]
 
     def patch_basebackup_info(self, *, entry, site_config):
         # drop path from resulting list and convert timestamps
@@ -408,12 +407,9 @@ class PGHoard:
                 self.delete_remote_basebackup(site, basebackup_to_be_deleted["name"], basebackup_to_be_deleted["metadata"])
         self.state["backup_sites"][site]["basebackups"] = basebackups
 
-    def check_wal_segment_gap(self, site):
+    def update_remote_metrics(self, site, conn_str):
         """Look up basebackups from the object store, prune any extra
         backups and return the datetime of the latest backup."""
-        basebackups = self.get_remote_basebackups_info(site)
-        xlogs = self.get_remote_xlogs_info(site)
-        xlogs_names = set([os.path.basename(x['name']) for x in xlogs])
         remote_wal_dir = os.path.join(self.config["backup_sites"][site]["prefix"], "xlog")
         current_xlog = None
         missing_wal = 0
@@ -421,24 +417,26 @@ class PGHoard:
         oldest_valid_basebackup = None
         valid_basebackup_count = 0
         useless_wals = set()
-        for basebackup in basebackups:
+        for basebackup in self.remote_basebackup[site]:
             print('Check basebackup %s %s' % (basebackup["metadata"]["start-wal-segment"],
                                               basebackup["metadata"]["start-time"]))
+
+            if oldest_valid_basebackup is None:
+                oldest_valid_basebackup = basebackup
+            valid_basebackup_count = valid_basebackup_count + 1
+
             if current_xlog is None:
                 # Maybe we need to increment, Do we need the start wal segment or next segment ?
                 current_xlog = basebackup["metadata"]["start-wal-segment"]
 
                 # Search for WAL segment before the first basebackup
-                for xlog in xlogs_names:
+                for xlog in self.remote_xlog[site]:
                     if wal.is_before(xlog, current_xlog):
                         useless_wals.add(xlog)
                 continue
-            if oldest_valid_basebackup is None:
-                oldest_valid_basebackup = basebackup
-            valid_basebackup_count = valid_basebackup_count + 1
 
             while current_xlog != basebackup["metadata"]["start-wal-segment"]:
-                if current_xlog in xlogs_names:
+                if current_xlog in self.remote_xlog[site]:
                     print('Wal segment found : %s' % current_xlog)
                     continious_wal = continious_wal + 1
                 else:
@@ -453,8 +451,28 @@ class PGHoard:
                 current_xlog = wal.get_next_wal_on_same_timeline(current_xlog)
 
         # Now we need to test wal segment to the current master position - 1
-        # get_current_wal_from_identify_system(conn_str):
-        # get_current_wal_file(node_info):
+        connection_string, _ = replication_connection_string_and_slot_using_pgpass(conn_str)
+        missing_wal_at_end = 0
+        while current_xlog != wal.get_current_wal_from_identify_system(connection_string):
+            if current_xlog in self.remote_xlog[site]:
+                print('Wal segment found : %s' % current_xlog)
+                continious_wal = continious_wal + 1
+            else:
+                # Don't care if it's the last WAL segment, it might be currently uploading
+                # Don't reset stats if last WAL segments are missing
+                remote_xlog_after_current = [xlog for xlog in self.remote_xlog[site] if wal.is_before(current_xlog, xlog)]
+                print('Wal NOT segment found : %s' % current_xlog)
+                self.log.error("Missing Wal segment in archive : %s"
+                               % os.path.join(remote_wal_dir,
+                                              current_xlog))
+                if len(remote_xlog_after_current) == 0:
+                    missing_wal_at_end = missing_wal_at_end + 1
+                else:
+                    missing_wal = missing_wal + 1
+                    continious_wal = 0
+                    oldest_valid_basebackup = None
+                    valid_basebackup_count = 0
+            current_xlog = wal.get_next_wal_on_same_timeline(current_xlog)
 
         if oldest_valid_basebackup is not None:
             print("Oldest valid basebackup: %s"
@@ -466,6 +484,10 @@ class PGHoard:
         self.metrics.gauge("pghoard.missing_remote_wal_segment",
                            missing_wal,
                            tags={"site": site})
+        print("Missing Wal segments at end: %s" % missing_wal_at_end)
+        self.metrics.gauge("pghoard.missing_remote_wal_segment_at_end",
+                           missing_wal_at_end,
+                           tags={"site": site})
         print("Continious Wal segments: %s" % continious_wal)
         self.metrics.gauge("pghoard.continious_wal",
                            continious_wal,
@@ -474,12 +496,12 @@ class PGHoard:
         self.metrics.gauge("pghoard.valid_basebackup_count",
                            valid_basebackup_count,
                            tags={"site": site})
-        print("Usefull wal: %s/%s" % (len(xlogs_names) - len(useless_wals), len(xlogs_names)))
+        print("Usefull wal: %s/%s" % (len(self.remote_xlog[site]) - len(useless_wals), len(self.remote_xlog[site])))
         self.metrics.gauge("pghoard.useful_remote_wal_count",
-                           len(xlogs_names) - len(useless_wals),
+                           len(self.remote_xlog[site]) - len(useless_wals),
                            tags={"site": site})
         self.metrics.gauge("pghoard.total_remote_wal_count",
-                           len(xlogs_names),
+                           len(self.remote_xlog[site]),
                            tags={"site": site})
 
         print("We can delete %s Wal segment" % len(useless_wals))
@@ -489,7 +511,8 @@ class PGHoard:
             self.log.debug("Deleting wal_file: %r", wal_path)
             try:
                 print("We should delete %s" % wal_path)
-                # storage.delete_key(wal_path)
+                storage.delete_key(wal_path)
+                del self.remote_xlog[site][useless_wal]
             except FileNotFoundFromStorageError:
                 self.log.info("Could not delete wal_file: %r, returning", wal_path)
 
@@ -605,10 +628,13 @@ class PGHoard:
         self.set_state_defaults(site)
         xlog_path, basebackup_path = self.create_backup_site_paths(site)
 
-        self.check_wal_segment_gap(site)
-
         if not site_config["active"]:
             return  # If a site has been marked inactive, don't bother checking anything
+
+        if site not in self.remote_xlog or site not in self.remote_basebackup:
+            self.remote_xlog[site] = self.get_remote_xlogs_info(site)
+            self.remote_basebackup[site] = self.get_remote_basebackups_info(site)
+            self.update_remote_metrics(site, random.choice(site_config["nodes"]))
 
         self._cleanup_inactive_receivexlogs(site)
 
