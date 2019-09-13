@@ -641,7 +641,6 @@ class PGHoard:
         if site not in self.remote_xlog or site not in self.remote_basebackup:
             self.remote_xlog[site] = self.get_remote_xlogs_info(site)
             self.remote_basebackup[site] = self.get_remote_basebackups_info(site)
-            self.update_remote_metrics(site, random.choice(site_config["nodes"]))
 
         self._cleanup_inactive_receivexlogs(site)
 
@@ -687,6 +686,9 @@ class PGHoard:
         if metadata and not os.path.exists(self.config["maintenance_mode_file"]):
             self.basebackups_callbacks[site] = Queue()
             self.create_basebackup(site, chosen_backup_node, basebackup_path, self.basebackups_callbacks[site], metadata)
+
+        # Update metrics
+        self.update_remote_metrics(site, random.choice(site_config["nodes"]))
 
     def get_new_backup_details(self, *, now=None, site, site_config):
         """Returns metadata to associate with new backup that needs to be created or None in case no backup should
