@@ -415,7 +415,6 @@ class PGHoard:
         continious_wal = 0
         oldest_valid_basebackup = None
         valid_basebackup_count = 0
-        useless_wals = set()
         for basebackup in self.remote_basebackup[site]:
             self.log.debug('Check basebackup %s %s' % (basebackup["metadata"]["start-wal-segment"],
                                               basebackup["metadata"]["start-time"]))
@@ -427,11 +426,6 @@ class PGHoard:
             if current_xlog is None:
                 # Maybe we need to increment, Do we need the start wal segment or next segment ?
                 current_xlog = basebackup["metadata"]["start-wal-segment"]
-
-                # Search for WAL segment before the first basebackup
-                for xlog in self.remote_xlog[site]:
-                    if wal.is_before(xlog, current_xlog):
-                        useless_wals.add(xlog)
                 continue
 
             while current_xlog != basebackup["metadata"]["start-wal-segment"]:
@@ -493,25 +487,9 @@ class PGHoard:
         self.metrics.gauge("pghoard.valid_basebackup_count",
                            valid_basebackup_count,
                            tags={"site": site})
-        self.log.debug("Usefull wal: %s/%s" % (len(self.remote_xlog[site]) - len(useless_wals), len(self.remote_xlog[site])))
-        self.metrics.gauge("pghoard.useful_remote_wal_count",
-                           len(self.remote_xlog[site]) - len(useless_wals),
-                           tags={"site": site})
         self.metrics.gauge("pghoard.total_remote_wal_count",
                            len(self.remote_xlog[site]),
                            tags={"site": site})
-
-        self.log.debug("We can delete %s Wal segment" % len(useless_wals))
-        storage = self.site_transfers.get(site)
-        for useless_wal in useless_wals:
-            wal_path = os.path.join(remote_wal_dir, useless_wal)
-            self.log.debug("Deleting wal_file: %r", wal_path)
-            try:
-                self.log.debug("We should delete %s" % wal_path)
-                storage.delete_key(wal_path)
-                del self.remote_xlog[site][useless_wal]
-            except FileNotFoundFromStorageError:
-                self.log.info("Could not delete wal_file: %r, returning", wal_path)
 
     def get_normalized_backup_time(self, site_config, *, now=None):
         """Returns the closest historical backup time that current time matches to (or current time if it matches).
