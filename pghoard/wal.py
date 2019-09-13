@@ -79,7 +79,7 @@ def is_before(a, b):
     timeline_a = a[0:8]
     timeline_b = b[0:8]
     if timeline_a != timeline_b:
-        raise Exception("Timeline does not match")
+        return False
     a_int = int(a[8:16], 16) * 0x100 + int(a[16:24], 16)
     b_int = int(b[8:16], 16) * 0x100 + int(b[16:24], 16)
     return a_int < b_int
