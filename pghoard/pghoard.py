@@ -117,7 +117,8 @@ class PGHoard:
                 mp_manager=self.mp_manager,
                 transfer_queue=self.transfer_queue,
                 metrics=self.metrics,
-                shared_state_dict=self.transfer_agent_state)
+                shared_state_dict=self.transfer_agent_state,
+                remote_xlog=self.remote_xlog)
             self.transfer_agents.append(ta)
 
         logutil.notify_systemd("READY=1")
@@ -252,11 +253,12 @@ class PGHoard:
                 if seg == 0 and log == 0:
                     break
                 seg, log = wal.get_previous_wal_on_same_timeline(seg, log, pg_version)
-            wal_path = os.path.join(self.config["backup_sites"][site]["prefix"], "xlog",
-                                    wal.name_for_tli_log_seg(tli, log, seg))
+            wal_name = wal.name_for_tli_log_seg(tli, log, seg)
+            wal_path = os.path.join(self.config["backup_sites"][site]["prefix"], "xlog", wal_name)
             self.log.debug("Deleting wal_file: %r", wal_path)
             try:
                 storage.delete_key(wal_path)
+                del self.remote_xlog[wal_name]
                 valid_timeline = True
             except FileNotFoundFromStorageError:
                 if not valid_timeline or tli <= 1:
@@ -274,10 +276,12 @@ class PGHoard:
                 self.log.exception("Problem deleting: %r", wal_path)
                 self.metrics.unexpected_exception(ex, where="delete_remote_wal_before")
 
-    def delete_remote_basebackup(self, site, basebackup, metadata):
+    def delete_remote_basebackup(self, site, basebackup):
+        basebackup_name =  basebackup["name"]
+        metadata = basebackup["metadata"]
         start_time = time.monotonic()
         storage = self.site_transfers.get(site)
-        main_backup_key = os.path.join(self.config["backup_sites"][site]["prefix"], "basebackup", basebackup)
+        main_backup_key = os.path.join(self.config["backup_sites"][site]["prefix"], "basebackup", basebackup_name)
         basebackup_data_files = [main_backup_key]
 
         if metadata.get("format") == "pghoard-bb-v2":
@@ -302,6 +306,7 @@ class PGHoard:
             except Exception as ex:  # FIXME: don't catch all exceptions; pylint: disable=broad-except
                 self.log.exception("Problem deleting: %r", obj_key)
                 self.metrics.unexpected_exception(ex, where="delete_remote_basebackup")
+        del self.remote_basebackup[basebackup]
         self.log.info("Deleted basebackup datafiles: %r, took: %.2fs",
                       ', '.join(basebackup_data_files), time.monotonic() - start_time)
 
@@ -404,12 +409,16 @@ class PGHoard:
 
                 if last_wal_segment_still_needed:
                     self.delete_remote_wal_before(last_wal_segment_still_needed, site, pg_version)
-                self.delete_remote_basebackup(site, basebackup_to_be_deleted["name"], basebackup_to_be_deleted["metadata"])
+                self.delete_remote_basebackup(site, basebackup_to_be_deleted)
         self.state["backup_sites"][site]["basebackups"] = basebackups
 
+
+
     def update_remote_metrics(self, site, conn_str):
-        """Look up basebackups from the object store, prune any extra
-        backups and return the datetime of the latest backup."""
+        """Based on uploaded xlogs and basebackups computes some metrics.
+           Try to detects gaps in xlog sequence, logs gap and update metrics
+           Also delete all useless xlogs on remote storage even with gap
+           between xlogs sequence"""
         remote_wal_dir = os.path.join(self.config["backup_sites"][site]["prefix"], "xlog")
         current_xlog = None
         missing_wal = 0
@@ -673,6 +682,7 @@ class PGHoard:
                 self.basebackups[site].join()
             del self.basebackups[site]
             del self.basebackups_callbacks[site]
+            self.remote_basebackup[site].append(result)
             self.log.debug("Basebackup has finished for %r: %r", site, result)
             self.refresh_backup_list_and_delete_old(site)
             self.time_of_last_backup_check[site] = time.monotonic()
