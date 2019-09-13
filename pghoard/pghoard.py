@@ -460,7 +460,9 @@ class PGHoard:
         # Now we need to test wal segment to the current master position - 1
         connection_string, _ = replication_connection_string_and_slot_using_pgpass(conn_str)
         missing_wal_at_end = 0
-        while current_xlog != wal.get_current_wal_from_identify_system(connection_string):
+        master_position = wal.get_current_wal_from_identify_system(connection_string)
+        while wal.is_before(current_xlog, master_position)\
+                or wal.is_before(current_xlog, wal.get_current_wal_from_identify_system(connection_string)):
             if current_xlog in self.remote_xlog[site]:
                 continious_wal = continious_wal + 1
             else:
