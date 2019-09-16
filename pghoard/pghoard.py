@@ -436,7 +436,7 @@ class PGHoard:
                     continious_wal = 0
                     oldest_valid_basebackup = None
                     valid_basebackup_count = 0
-                    self.log.error("Missing Wal segment in archive : %s"
+                    self.log.debug("Missing Wal segment in archive : %s"
                                    % os.path.join(remote_wal_dir,
                                                   current_xlog))
                 current_xlog = wal.get_next_wal_on_same_timeline(current_xlog)
@@ -453,7 +453,7 @@ class PGHoard:
                 # Don't care if it's the last WAL segment, it might be currently uploading
                 # Don't reset stats if last WAL segments are missing
                 remote_xlog_after_current = [xlog for xlog in self.remote_xlog[site] if wal.is_before(current_xlog, xlog)]
-                self.log.error("Missing Wal segment in archive : %s"
+                self.log.debug("Missing Wal segment in archive : %s"
                                % os.path.join(remote_wal_dir,
                                               current_xlog))
                 if len(remote_xlog_after_current) == 0:
