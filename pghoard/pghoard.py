@@ -325,7 +325,9 @@ class PGHoard:
 
         site_config = self.config["backup_sites"][site]
         results = storage.list_path(os.path.join(site_config["prefix"], "xlog"), with_metadata=False)
-        return [os.path.basename(x['name']) for x in results]
+        res = [os.path.basename(x['name']) for x in results]
+        self.log.info("get_remote_xlogs_info(%s) lists %s xlogs" % (site, len(res)))
+        return res
 
     def patch_basebackup_info(self, *, entry, site_config):
         # drop path from resulting list and convert timestamps
@@ -416,7 +418,7 @@ class PGHoard:
         oldest_valid_basebackup = None
         valid_basebackup_count = 0
         for basebackup in self.remote_basebackup[site]:
-            self.log.debug('Check basebackup %s %s' % (basebackup["metadata"]["start-wal-segment"],
+            self.log.info('Check basebackup %s %s' % (basebackup["metadata"]["start-wal-segment"],
                                               basebackup["metadata"]["start-time"]))
 
             if oldest_valid_basebackup is None:
@@ -429,6 +431,10 @@ class PGHoard:
                 continue
 
             while current_xlog != basebackup["metadata"]["start-wal-segment"]:
+                if current_xlog[len(current_xlog)-2:len(current_xlog)] == "00":
+                    print("Current XLOG : %s part of remote xlogs ? :%s"
+                          % (current_xlog, current_xlog in self.remote_xlog[site]))
+
                 if current_xlog in self.remote_xlog[site]:
                     continious_wal = continious_wal + 1
                 else:
@@ -436,10 +442,15 @@ class PGHoard:
                     continious_wal = 0
                     oldest_valid_basebackup = None
                     valid_basebackup_count = 0
-                    self.log.debug("Missing Wal segment in archive : %s"
-                                   % os.path.join(remote_wal_dir,
-                                                  current_xlog))
+                    # print(self.remote_xlog[site])
+
+                    # self.log.error("Missing Wal segment in archive : %s"
+                    #                % os.path.join(remote_wal_dir,
+                    #                               current_xlog))
                 current_xlog = wal.get_next_wal_on_same_timeline(current_xlog)
+
+        self.log.info("Scan remote: missing_wal:%s continious_wal:%s oldest_valid_basebackup:%s valid_basebackup_count:%s"
+                      % (missing_wal, continious_wal, oldest_valid_basebackup, valid_basebackup_count))
 
         # Now we need to test wal segment to the current master position - 1
         connection_string, _ = replication_connection_string_and_slot_using_pgpass(conn_str)
@@ -453,9 +464,9 @@ class PGHoard:
                 # Don't care if it's the last WAL segment, it might be currently uploading
                 # Don't reset stats if last WAL segments are missing
                 remote_xlog_after_current = [xlog for xlog in self.remote_xlog[site] if wal.is_before(current_xlog, xlog)]
-                self.log.debug("Missing Wal segment in archive : %s"
-                               % os.path.join(remote_wal_dir,
-                                              current_xlog))
+                # self.log.error("Missing Wal segment after last basebackup in archive : %s"
+                #                % os.path.join(remote_wal_dir,
+                #                               current_xlog))
                 if len(remote_xlog_after_current) == 0:
                     missing_wal_at_end = missing_wal_at_end + 1
                 else:
