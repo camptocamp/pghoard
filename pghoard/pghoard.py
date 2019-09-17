@@ -728,6 +728,7 @@ class PGHoard:
     def run(self):
         self.start_threads_on_startup()
         self.startup_walk_for_missed_files()
+        self.write_backup_state_to_json_file()
         while self.running:
             try:
                 for site, site_config in self.config["backup_sites"].items():
