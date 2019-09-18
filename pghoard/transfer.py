@@ -24,7 +24,7 @@ _last_stats_transmit_time = 0
 
 class TransferAgent(Thread):
     def __init__(self, config, compression_queue, mp_manager, transfer_queue, metrics,
-                 shared_state_dict, remote_xlog):
+                 shared_state_dict, remote_xlog, remote_basebackup):
         super().__init__()
         self.log = logging.getLogger("TransferAgent")
         self.config = config
@@ -37,6 +37,7 @@ class TransferAgent(Thread):
         self.sleep = time.sleep
         self.state = shared_state_dict
         self.remote_xlog = remote_xlog
+        self.remote_basebackup = remote_basebackup
         self.site_transfers = {}
         self.log.debug("TransferAgent initialized")
 
@@ -253,8 +254,13 @@ class TransferAgent(Thread):
                 except Exception as ex:  # pylint: disable=broad-except
                     self.log.exception("Problem in deleting file: %r", file_to_transfer["local_path"])
                     self.metrics.unexpected_exception(ex, where="handle_upload_unlink")
-                # update metrics for remote xlog
+
+            # update metrics for remote xlog and base backup
+            if file_to_transfer.get('filetype') == 'xlog':
                 self.remote_xlog[site].append(os.path.basename(key))
+            elif file_to_transfer.get('filetype') == 'basebackup':
+                self.remote_basebackup[site].append(list(storage.iter_key(key, include_key=True))[0].value)
+
             return {"success": True, "opaque": file_to_transfer.get("opaque")}
         except Exception as ex:  # pylint: disable=broad-except
             if file_to_transfer.get("retry_number", 0) > 0:
