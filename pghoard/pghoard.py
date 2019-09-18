@@ -118,7 +118,8 @@ class PGHoard:
                 transfer_queue=self.transfer_queue,
                 metrics=self.metrics,
                 shared_state_dict=self.transfer_agent_state,
-                remote_xlog=self.remote_xlog)
+                remote_xlog=self.remote_xlog,
+                remote_basebackup=self.remote_basebackup)
             self.transfer_agents.append(ta)
 
         logutil.notify_systemd("READY=1")
@@ -647,7 +648,6 @@ class PGHoard:
                 self.basebackups[site].join()
             del self.basebackups[site]
             del self.basebackups_callbacks[site]
-            self.remote_basebackup[site].append(result)
             self.log.debug("Basebackup has finished for %r: %r", site, result)
             self.refresh_backup_list_and_delete_old(site)
             self.time_of_last_backup_check[site] = time.monotonic()
@@ -728,7 +728,6 @@ class PGHoard:
     def run(self):
         self.start_threads_on_startup()
         self.startup_walk_for_missed_files()
-        self.write_backup_state_to_json_file()
         while self.running:
             try:
                 for site, site_config in self.config["backup_sites"].items():
