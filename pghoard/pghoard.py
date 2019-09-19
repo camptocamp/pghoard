@@ -261,7 +261,7 @@ class PGHoard:
                     self.remote_xlog[site].remove(xlog)
                 except FileNotFoundFromStorageError:
                     self.log.info("Could not delete wal_file: %r, returning", wal_path)
-                self.log.debug("Deleted wal_file: %r", wal_path)
+                self.log.info("Deleted wal_file: %r", wal_path)
 
         # Continue deletion on previous timeline and on the oldest log/seg
         tli, log, seg = wal.name_to_tli_log_seg(oldest_xlog_in_timeline)
@@ -413,6 +413,7 @@ class PGHoard:
         continious_wal = 0
         oldest_valid_basebackup = None
         valid_basebackup_count = 0
+        first_wal_needed = None
         for basebackup in self.remote_basebackup[site]:
             self.log.debug('Check basebackup %s %s' % (basebackup["metadata"]["start-wal-segment"],
                                               basebackup["metadata"]["start-time"]))
@@ -424,6 +425,7 @@ class PGHoard:
             if current_xlog is None:
                 # Maybe we need to increment, Do we need the start wal segment or next segment ?
                 current_xlog = basebackup["metadata"]["start-wal-segment"]
+                first_wal_needed = current_xlog
                 continue
 
             while current_xlog != basebackup["metadata"]["start-wal-segment"]:
@@ -462,6 +464,16 @@ class PGHoard:
                     oldest_valid_basebackup = None
                     valid_basebackup_count = 0
             current_xlog = wal.get_next_wal_on_same_timeline(current_xlog)
+
+        # Compute useless wals
+        useless_wal_count = 0
+        for xlog in self.remote_xlog:
+            if wal.is_before(xlog, first_wal_needed):
+                useless_wal_count = useless_wal_count + 1
+        self.metrics.gauge("pghoard.useless_remote_wal_segment",
+                           useless_wal_count,
+                           tags={"site": site})
+        self.log.debug("Useless Wal segments: %s" % useless_wal_count)
 
         if oldest_valid_basebackup is not None:
             self.log.debug("Oldest valid basebackup: %s"
