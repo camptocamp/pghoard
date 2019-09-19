@@ -118,8 +118,7 @@ class PGHoard:
                 transfer_queue=self.transfer_queue,
                 metrics=self.metrics,
                 shared_state_dict=self.transfer_agent_state,
-                remote_xlog=self.remote_xlog,
-                remote_basebackup=self.remote_basebackup)
+                pghoard=self)
             self.transfer_agents.append(ta)
 
         logutil.notify_systemd("READY=1")
