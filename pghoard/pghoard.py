@@ -497,6 +497,7 @@ class PGHoard:
         self.metrics.gauge("pghoard.valid_basebackup_count",
                            valid_basebackup_count,
                            tags={"site": site})
+        self.log.debug("Total remote Wal segments: %s" % len(self.remote_xlog[site]))
         self.metrics.gauge("pghoard.total_remote_wal_count",
                            len(self.remote_xlog[site]),
                            tags={"site": site})
@@ -648,6 +649,9 @@ class PGHoard:
             self.refresh_backup_list_and_delete_old(site)
             self.time_of_last_backup_check[site] = time.monotonic()
 
+        # Update metrics
+        self.update_remote_metrics(site, random.choice(site_config["nodes"]))
+
         # check if a basebackup is running, or if a basebackup has just completed
         if site in self.basebackups:
             try:
@@ -667,9 +671,6 @@ class PGHoard:
         if metadata and not os.path.exists(self.config["maintenance_mode_file"]):
             self.basebackups_callbacks[site] = Queue()
             self.create_basebackup(site, chosen_backup_node, basebackup_path, self.basebackups_callbacks[site], metadata)
-
-        # Update metrics
-        self.update_remote_metrics(site, random.choice(site_config["nodes"]))
 
     def get_new_backup_details(self, *, now=None, site, site_config):
         """Returns metadata to associate with new backup that needs to be created or None in case no backup should
