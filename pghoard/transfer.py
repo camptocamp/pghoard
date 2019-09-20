@@ -260,7 +260,8 @@ class TransferAgent(Thread):
             elif file_to_transfer.get('filetype') == 'basebackup':
                 new_basebackup = list(storage.iter_key(key, include_key=True))[0].value
                 # patch metadata
-                self.pghoard.patch_basebackup_info(new_basebackup)
+                self.pghoard.patch_basebackup_info(entry=new_basebackup,
+                                                   site_config=self.pghoard.config["backup_sites"][site])
                 self.pghoard.remote_basebackup[site].append(new_basebackup)
 
             return {"success": True, "opaque": file_to_transfer.get("opaque")}
