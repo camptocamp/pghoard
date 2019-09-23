@@ -394,8 +394,8 @@ class PGHoard:
             for basebackup_to_be_deleted in basebackups_to_delete:
                 pg_version = basebackup_to_be_deleted["metadata"].get("pg-version")
                 last_wal_segment_still_needed = 0
-                if len(self.remote_basebackup) > 0:
-                    last_wal_segment_still_needed = self.remote_basebackup[0]["metadata"]["start-wal-segment"]
+                if len(self.remote_basebackup[site]) > 0:
+                    last_wal_segment_still_needed = self.remote_basebackup[site][0]["metadata"]["start-wal-segment"]
 
                 if last_wal_segment_still_needed:
                     self.delete_remote_wal_before(last_wal_segment_still_needed, site)
