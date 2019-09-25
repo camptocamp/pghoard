@@ -70,6 +70,9 @@ class PGHoard:
             "startup_time": datetime.datetime.utcnow().isoformat(),
         }
         self.transfer_agent_state = {}  # shared among transfer agents
+        # Keep track of remote xlog
+        self.remote_xlog = {}
+        self.remote_basebackup = {}
         self.load_config()
         if self.config["transfer"]["thread_count"] > 1:
             self.mp_manager = multiprocessing.Manager()
@@ -90,9 +93,6 @@ class PGHoard:
         signal.signal(signal.SIGTERM, self.quit)
         self.time_of_last_backup_check = {}
         self.requested_basebackup_sites = set()
-        # Keep track of remote xlog
-        self.remote_xlog = {}
-        self.remote_basebackup = {}
 
         self.inotify = InotifyWatcher(self.compression_queue)
         self.webserver = WebServer(
