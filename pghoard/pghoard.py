@@ -273,9 +273,9 @@ class PGHoard:
         main_backup_key = os.path.join(self.config["backup_sites"][site]["prefix"], "basebackup", basebackup["name"])
         basebackup_data_files = [main_backup_key]
 
-        if basebackup["metadata"].get("format") == "pghoard-bb-v2":
+        if basebackup['metadata'].get("format") == "pghoard-bb-v2":
             bmeta_compressed = storage.get_contents_to_string(main_backup_key)[0]
-            with rohmufile.file_reader(fileobj=io.BytesIO(bmeta_compressed), metadata=basebackup["metadata"],
+            with rohmufile.file_reader(fileobj=io.BytesIO(bmeta_compressed), metadata=basebackup['metadata'],
                                        key_lookup=config.key_lookup_for_site(self.config, site)) as input_obj:
                 bmeta = extract_pghoard_bb_v2_metadata(input_obj)
                 self.log.debug("PGHoard chunk metadata: %r", bmeta)
@@ -627,7 +627,7 @@ class PGHoard:
             return  # If a site has been marked inactive, don't bother checking anything
 
         if site not in self.remote_xlog or site not in self.remote_basebackup:
-            self.log.info("Retrieving info from remote storage for %s" % site)
+            self.log.info("Retrieving info from remote storage for %s", site)
             self.remote_xlog[site] = self.get_remote_xlogs_info(site)
             self.remote_basebackup[site] = self.get_remote_basebackups_info(site)
             self.state["backup_sites"][site]["basebackups"] = self.remote_basebackup[site]
