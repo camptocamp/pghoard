@@ -247,8 +247,8 @@ class PGHoard:
         wal_segment_tli, _, _ = wal.name_to_tli_log_seg(wal_segment)
         if wal_segment_tli == 0:
             return
-        oldest_xlog_in_timeline = None
-        for xlog in self.remote_xlog[site]:
+        oldest_xlog_in_timeline = wal_segment
+        for xlog in self.remote_xlog[site][:]:
             xlog_tli, _, _ = wal.name_to_tli_log_seg(xlog)
             # Search for xlog in same timeline
             if wal_segment_tli == xlog_tli:
@@ -261,6 +261,9 @@ class PGHoard:
                     self.remote_xlog[site].remove(xlog)
                 except FileNotFoundFromStorageError:
                     self.log.info("Could not delete wal_file: %r, returning", wal_path)
+                except Exception as ex:  # FIXME: don't catch all exceptions; pylint: disable=broad-except
+                    self.log.exception("Problem deleting: %r", wal_path)
+                    self.metrics.unexpected_exception(ex, where="delete_remote_wal_before")
                 self.log.info("Deleted wal_file: %r", wal_path)
 
         # Continue deletion on previous timeline and on the oldest log/seg
@@ -408,13 +411,14 @@ class PGHoard:
             if len(basebackups_to_delete) > 0 and len(self.remote_basebackup[site]) > 0:
                 pg_version = basebackups_to_delete[0]["metadata"].get("pg-version")
                 last_wal_segment_still_needed = self.remote_basebackup[site][0]["metadata"]["start-wal-segment"]
-                self.delete_remote_wal_before(last_wal_segment_still_needed, site, pg_version)
+                self.delete_remote_wal_before(last_wal_segment_still_needed, site)
 
     def update_remote_metrics(self, site, conn_str):
         """Based on uploaded xlogs and basebackups computes some metrics.
            Try to detects gaps in xlog sequence, logs gap and update metrics
            Also delete all useless xlogs on remote storage even with gap
            between xlogs sequence"""
+
         remote_wal_dir = os.path.join(self.config["backup_sites"][site]["prefix"], "xlog")
         xlogs_dict = {key: True for key in self.remote_xlog[site]}
         current_xlog = None
