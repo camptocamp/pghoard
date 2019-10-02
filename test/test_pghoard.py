@@ -229,11 +229,11 @@ dbname|"""
         self.pghoard.refresh_backup_list_and_delete_old(self.test_site)
         self.pghoard.remote_basebackup[self.test_site] = self.pghoard.get_remote_basebackups_info(self.test_site)
         assert len(self.pghoard.remote_basebackup[self.test_site]) == 1
-        assert len(self.pghoard.remote_xlog[self.test_site]) == 3
+        assert len(self.pghoard.remote_xlog[self.test_site]) == 2
         assert len(os.listdir(wal_storage_path)) == 2 * len(self.pghoard.remote_xlog[self.test_site])
         # Put all WAL segments between 1 and 9 in place to see that they're deleted and we don't try to go back
-        # any further from TLI 1.  Note that timeline 3 is now "empty" so deletion shouldn't touch timelines 2
-        # or 1.
+        # any further from TLI 1.  Note that deletion handle gap so all WAL segments on timeline 2 and 1 should
+        # be deleted
         new_backups_and_wals = {
             "": [
                 "000000020000000A000000FC",
@@ -251,14 +251,12 @@ dbname|"""
         write_backup_and_wal_files(new_backups_and_wals)
         self.pghoard.remote_basebackup[self.test_site] = self.pghoard.get_remote_basebackups_info(self.test_site)
         self.pghoard.remote_xlog[self.test_site] = self.pghoard.get_remote_xlogs_info(self.test_site)
-        assert len(self.pghoard.remote_xlog[self.test_site]) == 11
+        assert len(self.pghoard.remote_xlog[self.test_site]) == 10
         assert len(os.listdir(wal_storage_path)) == 2 * len(self.pghoard.remote_xlog[self.test_site])
+
         self.pghoard.refresh_backup_list_and_delete_old(self.test_site)
         assert len(self.pghoard.remote_basebackup[self.test_site]) == 1
-        expected_wal_count = len(backups_and_wals["2015-08-25_0"])
-        expected_wal_count += len(new_backups_and_wals[""])
-        expected_wal_count += len(new_backups_and_wals["2015-08-25_4"])
-        assert len(self.pghoard.remote_xlog[self.test_site]) == expected_wal_count
+        assert len(self.pghoard.remote_xlog[self.test_site]) == len(new_backups_and_wals["2015-08-25_4"])
         assert len(os.listdir(wal_storage_path)) == 2 * len(self.pghoard.remote_xlog[self.test_site])
         # Now put WAL files in place with no gaps anywhere
         gapless_backups_and_wals = {
@@ -267,13 +265,14 @@ dbname|"""
                 "000000040000000B00000004",
             ],
             "2015-08-25_4": [
-                "000000040000000B00000005",
+                "000000040000000B00000005",  # already in storage
             ],
         }
+        # import pdb;pdb.set_trace()
         write_backup_and_wal_files(gapless_backups_and_wals)
         self.pghoard.remote_basebackup[self.test_site] = self.pghoard.get_remote_basebackups_info(self.test_site)
         self.pghoard.remote_xlog[self.test_site] = self.pghoard.get_remote_xlogs_info(self.test_site)
-        assert len(self.pghoard.remote_xlog[self.test_site]) >= 10
+        assert len(self.pghoard.remote_xlog[self.test_site]) == 3
         assert len(os.listdir(wal_storage_path)) == 2 * len(self.pghoard.remote_xlog[self.test_site])
         self.pghoard.refresh_backup_list_and_delete_old(self.test_site)
         assert len(self.pghoard.remote_basebackup[self.test_site]) == 1
