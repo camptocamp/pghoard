@@ -5,6 +5,13 @@ Copyright (c) 2015 Ohmu Ltd
 See LICENSE for details
 """
 # pylint: disable=attribute-defined-outside-init
+import datetime
+import hashlib
+
+import dateutil
+
+from pghoard.rohmu.object_storage.base import IterKeyItem, KEY_TYPE_OBJECT
+
 from .base import PGHoardTestCase
 from pghoard import metrics
 from pghoard.rohmu.errors import FileNotFoundFromStorageError, StorageError
@@ -17,11 +24,39 @@ import time
 
 
 class MockStorage(Mock):
+
+    def init(self):
+        if self.init_ok is not True:  # pylint: disable=access-member-before-definition
+            self.objects = {}
+            now = datetime.datetime.now(dateutil.tz.tzlocal())
+            self.sample_storage_date = "{} {}".format(now.isoformat().split("+", 1)[0], now.tzname())
+            self.init_ok = True
+
+    def setup_method(self):
+        self.init()
+
     def get_contents_to_string(self, key):  # pylint: disable=unused-argument
+        self.init()
         return b"joo", {"key": "value"}
 
     def store_file_from_disk(self, key, local_path, metadata, multipart=None):  # pylint: disable=unused-argument
-        pass
+        self.init()
+        self.objects[key] = local_path
+
+    def iter_key(self, key, *, with_metadata=True, deep=False, include_key=False):  # pylint: disable=unused-argument
+        self.init()
+        for item in self.objects:
+            if key == item[0:len(key)]:
+                yield IterKeyItem(
+                    type=KEY_TYPE_OBJECT,
+                    value={
+                        "last_modified": self.sample_storage_date,
+                        "md5": hashlib.md5(item.encode()).hexdigest(),
+                        "metadata": {"start-time": self.sample_storage_date},
+                        "name": item,
+                        "size": len(self.objects[item]),
+                    },
+                )
 
 
 class MockStorageRaising(Mock):
@@ -64,7 +99,8 @@ class TestTransferAgent(PGHoardTestCase):
             mp_manager=None,
             transfer_queue=self.transfer_queue,
             metrics=metrics.Metrics(statsd={}),
-            shared_state_dict={})
+            shared_state_dict={},
+            pghoard=self)
         self.transfer_agent.start()
 
     def teardown_method(self, method):
