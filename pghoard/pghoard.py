@@ -268,16 +268,14 @@ class PGHoard:
         self.delete_remote_wal_before(wal.name_for_tli_log_seg(tli - 1, log, seg), site)
 
     def delete_remote_basebackup(self, site, basebackup):
-        basebackup_name =  basebackup["name"]
-        metadata = basebackup["metadata"]
         start_time = time.monotonic()
         storage = self.site_transfers.get(site)
-        main_backup_key = os.path.join(self.config["backup_sites"][site]["prefix"], "basebackup", basebackup_name)
+        main_backup_key = os.path.join(self.config["backup_sites"][site]["prefix"], "basebackup", basebackup["name"])
         basebackup_data_files = [main_backup_key]
 
-        if metadata.get("format") == "pghoard-bb-v2":
+        if basebackup["metadata"].get("format") == "pghoard-bb-v2":
             bmeta_compressed = storage.get_contents_to_string(main_backup_key)[0]
-            with rohmufile.file_reader(fileobj=io.BytesIO(bmeta_compressed), metadata=metadata,
+            with rohmufile.file_reader(fileobj=io.BytesIO(bmeta_compressed), metadata=basebackup["metadata"],
                                        key_lookup=config.key_lookup_for_site(self.config, site)) as input_obj:
                 bmeta = extract_pghoard_bb_v2_metadata(input_obj)
                 self.log.debug("PGHoard chunk metadata: %r", bmeta)
