@@ -409,7 +409,6 @@ class PGHoard:
                 self.delete_remote_basebackup(site, basebackup_to_be_deleted)
 
             if len(basebackups_to_delete) > 0 and len(self.remote_basebackup[site]) > 0:
-                pg_version = basebackups_to_delete[0]["metadata"].get("pg-version")
                 last_wal_segment_still_needed = self.remote_basebackup[site][0]["metadata"]["start-wal-segment"]
                 self.delete_remote_wal_before(last_wal_segment_still_needed, site)
 
@@ -430,8 +429,9 @@ class PGHoard:
         useless_wal_count = 0
         missing_wal_at_end = 0
         for basebackup in self.remote_basebackup[site]:
-            self.log.debug('Check basebackup %s %s' % (basebackup["metadata"]["start-wal-segment"],
-                                              basebackup["metadata"]["start-time"]))
+            self.log.debug('Check basebackup %s %s',
+                           basebackup["metadata"]["start-wal-segment"],
+                           basebackup["metadata"]["start-time"])
 
             if oldest_valid_basebackup is None:
                 oldest_valid_basebackup = basebackup
@@ -451,9 +451,9 @@ class PGHoard:
                     continious_wal = 0
                     oldest_valid_basebackup = None
                     valid_basebackup_count = 0
-                    self.log.debug("Missing Wal segment in archive : %s"
-                                   % os.path.join(remote_wal_dir,
-                                                  current_xlog))
+                    self.log.debug("Missing Wal segment in archive : %s",
+                                   os.path.join(remote_wal_dir,
+                                                current_xlog))
                 current_xlog = wal.get_next_wal_on_same_timeline(current_xlog)
 
         # Now we need to test wal segment to the current master position - 1
@@ -467,10 +467,11 @@ class PGHoard:
                 else:
                     # Don't care if it's the last WAL segment, it might be currently uploading
                     # Don't reset stats if last WAL segments are missing
-                    remote_xlog_after_current = [xlog for xlog in self.remote_xlog[site] if wal.is_before(current_xlog, xlog)]
-                    self.log.debug("Missing Wal segment in archive : %s"
-                                   % os.path.join(remote_wal_dir,
-                                                  current_xlog))
+                    remote_xlog_after_current = [xlog for xlog in self.remote_xlog[site]
+                                                 if wal.is_before(current_xlog, xlog)]
+                    self.log.debug("Missing Wal segment in archive : %s",
+                                   os.path.join(remote_wal_dir,
+                                                current_xlog))
                     if len(remote_xlog_after_current) == 0:
                         missing_wal_at_end = missing_wal_at_end + 1
                     else:
@@ -488,31 +489,31 @@ class PGHoard:
         self.metrics.gauge("pghoard.useless_remote_wal_segment",
                            useless_wal_count,
                            tags={"site": site})
-        self.log.debug("Useless Wal segments: %s" % useless_wal_count)
+        self.log.debug("Useless Wal segments: %s", useless_wal_count)
 
         if oldest_valid_basebackup is not None:
-            self.log.debug("Oldest valid basebackup: %s"
-                  % oldest_valid_basebackup['metadata']["start-time"])
+            self.log.debug("Oldest valid basebackup: %s",
+                           oldest_valid_basebackup['metadata']["start-time"])
             self.metrics.gauge("pghoard.oldest_valid_basebackup",
                                oldest_valid_basebackup['metadata']["start-time"].timestamp(),
                                tags={"site": site})
-        self.log.debug("Missing Wal segments: %s" % missing_wal)
+        self.log.debug("Missing Wal segments: %s", missing_wal)
         self.metrics.gauge("pghoard.missing_remote_wal_segment",
                            missing_wal,
                            tags={"site": site})
-        self.log.debug("Missing Wal segments at end: %s" % missing_wal_at_end)
+        self.log.debug("Missing Wal segments at end: %s", missing_wal_at_end)
         self.metrics.gauge("pghoard.missing_remote_wal_segment_at_end",
                            missing_wal_at_end,
                            tags={"site": site})
-        self.log.debug("Continious Wal segments: %s" % continious_wal)
+        self.log.debug("Continious Wal segments: %s", continious_wal)
         self.metrics.gauge("pghoard.continious_wal",
                            continious_wal,
                            tags={"site": site})
-        self.log.debug("Valid basebackup count: %s" % valid_basebackup_count)
+        self.log.debug("Valid basebackup count: %s", valid_basebackup_count)
         self.metrics.gauge("pghoard.valid_basebackup_count",
                            valid_basebackup_count,
                            tags={"site": site})
-        self.log.debug("Total remote Wal segments: %s" % len(self.remote_xlog[site]))
+        self.log.debug("Total remote Wal segments: %s", len(self.remote_xlog[site]))
         self.metrics.gauge("pghoard.total_remote_wal_count",
                            len(self.remote_xlog[site]),
                            tags={"site": site})
