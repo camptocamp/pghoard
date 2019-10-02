@@ -395,6 +395,7 @@ class PGHoard:
     def refresh_backup_list_and_delete_old(self, site):
         """Look up basebackups from the object store, prune any extra
         backups and return the datetime of the latest backup."""
+        self.log.debug("Found %r basebackups", self.remote_basebackup[site])
 
         site_config = self.config["backup_sites"][site]
         # Never delete backups from a recovery site. This check is already elsewhere as well
