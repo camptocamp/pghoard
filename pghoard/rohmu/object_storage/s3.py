@@ -28,10 +28,6 @@ MULTIPART_CHUNK_SIZE = calculate_chunk_size()
 READ_BLOCK_SIZE = 1024 * 1024 * 1
 
 
-class PaginationNotImplemented(Exception):
-    pass
-
-
 class S3Transfer(BaseTransfer):
     def __init__(self,
                  region,
