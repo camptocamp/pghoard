@@ -416,6 +416,7 @@ class PGHoard:
            Also delete all useless xlogs on remote storage even with gap
            between xlogs sequence"""
         remote_wal_dir = os.path.join(self.config["backup_sites"][site]["prefix"], "xlog")
+        xlogs_dict = {key: True for key in self.remote_xlog[site]}
         current_xlog = None
         missing_wal = 0
         continious_wal = 0
@@ -437,7 +438,7 @@ class PGHoard:
                 continue
 
             while current_xlog != basebackup["metadata"]["start-wal-segment"]:
-                if current_xlog in self.remote_xlog[site]:
+                if current_xlog in xlogs_dict:
                     continious_wal = continious_wal + 1
                 else:
                     missing_wal = missing_wal + 1
@@ -455,7 +456,7 @@ class PGHoard:
         master_position = wal.get_current_wal_from_identify_system(connection_string)
         while wal.is_before(current_xlog, master_position)\
                 or wal.is_before(current_xlog, wal.get_current_wal_from_identify_system(connection_string)):
-            if current_xlog in self.remote_xlog[site]:
+            if current_xlog in xlogs_dict:
                 continious_wal = continious_wal + 1
             else:
                 # Don't care if it's the last WAL segment, it might be currently uploading
@@ -475,7 +476,7 @@ class PGHoard:
 
         # Compute useless wals
         useless_wal_count = 0
-        for xlog in self.remote_xlog:
+        for xlog in self.remote_xlog[site]:
             if wal.is_before(xlog, first_wal_needed):
                 useless_wal_count = useless_wal_count + 1
         self.metrics.gauge("pghoard.useless_remote_wal_segment",
