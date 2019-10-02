@@ -401,17 +401,13 @@ class PGHoard:
         # but still check explicitly here to ensure we certainly won't delete anything unexpectedly
         if site_config["active"]:
             basebackups_to_delete = self.determine_backups_to_delete(site)
-
             for basebackup_to_be_deleted in basebackups_to_delete:
-                pg_version = basebackup_to_be_deleted["metadata"].get("pg-version")
-                last_wal_segment_still_needed = 0
-                if len(self.remote_basebackup[site]) > 0:
-                    last_wal_segment_still_needed = self.remote_basebackup[site][0]["metadata"]["start-wal-segment"]
-
-                if last_wal_segment_still_needed:
-                    self.delete_remote_wal_before(last_wal_segment_still_needed, site)
                 self.delete_remote_basebackup(site, basebackup_to_be_deleted)
-        self.state["backup_sites"][site]["basebackups"] = self.remote_basebackup[site]
+
+            if len(basebackups_to_delete) > 0 and len(self.remote_basebackup[site]) > 0:
+                pg_version = basebackups_to_delete[0]["metadata"].get("pg-version")
+                last_wal_segment_still_needed = self.remote_basebackup[site][0]["metadata"]["start-wal-segment"]
+                self.delete_remote_wal_before(last_wal_segment_still_needed, site, pg_version)
 
     def update_remote_metrics(self, site, conn_str):
         """Based on uploaded xlogs and basebackups computes some metrics.
@@ -632,7 +628,8 @@ class PGHoard:
             self.log.info("Retrieving info from remote storage for %s" % site)
             self.remote_xlog[site] = self.get_remote_xlogs_info(site)
             self.remote_basebackup[site] = self.get_remote_basebackups_info(site)
-            self.log.info("Remote info updated for %s" % site)
+            self.state["backup_sites"][site]["basebackups"] = self.remote_basebackup[site]
+            self.log.info("Remote info updated for %s", site)
 
         self._cleanup_inactive_receivexlogs(site)
 
@@ -686,7 +683,7 @@ class PGHoard:
         be created at this time"""
         if not now:
             now = datetime.datetime.now(datetime.timezone.utc)
-        basebackups = self.state["backup_sites"][site]["basebackups"]
+        basebackups = self.remote_basebackup[site]
         backup_hour = site_config.get("basebackup_hour")
         backup_minute = site_config.get("basebackup_minute")
         backup_reason = None
