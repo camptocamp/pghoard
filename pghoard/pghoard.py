@@ -427,6 +427,8 @@ class PGHoard:
         oldest_valid_basebackup = None
         valid_basebackup_count = 0
         first_wal_needed = None
+        useless_wal_count = 0
+        missing_wal_at_end = 0
         for basebackup in self.remote_basebackup[site]:
             self.log.debug('Check basebackup %s %s' % (basebackup["metadata"]["start-wal-segment"],
                                               basebackup["metadata"]["start-time"]))
@@ -455,34 +457,34 @@ class PGHoard:
                 current_xlog = wal.get_next_wal_on_same_timeline(current_xlog)
 
         # Now we need to test wal segment to the current master position - 1
-        connection_string, _ = replication_connection_string_and_slot_using_pgpass(conn_str)
-        missing_wal_at_end = 0
-        master_position = wal.get_current_wal_from_identify_system(connection_string)
-        while wal.is_before(current_xlog, master_position)\
-                or wal.is_before(current_xlog, wal.get_current_wal_from_identify_system(connection_string)):
-            if current_xlog in xlogs_dict:
-                continious_wal = continious_wal + 1
-            else:
-                # Don't care if it's the last WAL segment, it might be currently uploading
-                # Don't reset stats if last WAL segments are missing
-                remote_xlog_after_current = [xlog for xlog in self.remote_xlog[site] if wal.is_before(current_xlog, xlog)]
-                self.log.debug("Missing Wal segment in archive : %s"
-                               % os.path.join(remote_wal_dir,
-                                              current_xlog))
-                if len(remote_xlog_after_current) == 0:
-                    missing_wal_at_end = missing_wal_at_end + 1
+        if current_xlog:
+            connection_string, _ = replication_connection_string_and_slot_using_pgpass(conn_str)
+            master_position = wal.get_current_wal_from_identify_system(connection_string)
+            while wal.is_before(current_xlog, master_position)\
+                    or wal.is_before(current_xlog, wal.get_current_wal_from_identify_system(connection_string)):
+                if current_xlog in xlogs_dict:
+                    continious_wal = continious_wal + 1
                 else:
-                    missing_wal = missing_wal + 1
-                    continious_wal = 0
-                    oldest_valid_basebackup = None
-                    valid_basebackup_count = 0
-            current_xlog = wal.get_next_wal_on_same_timeline(current_xlog)
+                    # Don't care if it's the last WAL segment, it might be currently uploading
+                    # Don't reset stats if last WAL segments are missing
+                    remote_xlog_after_current = [xlog for xlog in self.remote_xlog[site] if wal.is_before(current_xlog, xlog)]
+                    self.log.debug("Missing Wal segment in archive : %s"
+                                   % os.path.join(remote_wal_dir,
+                                                  current_xlog))
+                    if len(remote_xlog_after_current) == 0:
+                        missing_wal_at_end = missing_wal_at_end + 1
+                    else:
+                        missing_wal = missing_wal + 1
+                        continious_wal = 0
+                        oldest_valid_basebackup = None
+                        valid_basebackup_count = 0
+                current_xlog = wal.get_next_wal_on_same_timeline(current_xlog)
 
-        # Compute useless wals
-        useless_wal_count = 0
-        for xlog in self.remote_xlog[site]:
-            if wal.is_before(xlog, first_wal_needed):
-                useless_wal_count = useless_wal_count + 1
+            # Compute useless wals
+            for xlog in self.remote_xlog[site]:
+                if wal.is_before(xlog, first_wal_needed):
+                    useless_wal_count = useless_wal_count + 1
+
         self.metrics.gauge("pghoard.useless_remote_wal_segment",
                            useless_wal_count,
                            tags={"site": site})
