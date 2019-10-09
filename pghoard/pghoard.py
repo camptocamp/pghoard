@@ -497,6 +497,11 @@ class PGHoard:
             self.metrics.gauge("pghoard.oldest_valid_basebackup",
                                oldest_valid_basebackup['metadata']["start-time"].timestamp(),
                                tags={"site": site})
+        else:
+            self.metrics.gauge("pghoard.oldest_valid_basebackup",
+                               -1,
+                               tags={"site": site})
+
         self.log.debug("Missing Wal segments: %s", missing_wal)
         self.metrics.gauge("pghoard.missing_remote_wal_segment",
                            missing_wal,
