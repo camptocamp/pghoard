@@ -502,6 +502,12 @@ class PGHoard:
                                -1,
                                tags={"site": site})
 
+        for basebackup in self.remote_basebackup[site]:
+            self.metrics.gauge("pghoard.basebackup",
+                               basebackup['metadata']["start-time"].timestamp(),
+                               tags={"site": site,
+                                     "start-wal-segment": basebackup['metadata']['start-wal-segment']})
+
         self.log.debug("Missing Wal segments: %s", missing_wal)
         self.metrics.gauge("pghoard.missing_remote_wal_segment",
                            missing_wal,
