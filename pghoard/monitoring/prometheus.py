@@ -12,12 +12,18 @@ class PrometheusClient:
         self.metrics = {}
 
     def gauge(self, metric, value, tags=None):
+        if tags is None:
+            tags = {}
         self._update(metric, value, tags)
 
     def increase(self, metric, inc_value=1, tags=None):
+        if tags is None:
+            tags = {}
         self._update(metric, inc_value, tags)
 
     def timing(self, metric, value, tags=None):
+        if tags is None:
+            tags = {}
         self._update(metric, value, tags)
 
     def unexpected_exception(self, ex, where, tags=None):
