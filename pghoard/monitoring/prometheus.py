@@ -35,7 +35,7 @@ class PrometheusClient:
     def get_metrics(self):
         data = []
         for metric, value in self.metrics.items():
-            line = '{} {}'.format(metric, value.get("value"))
+            line = '{} {}'.format(metric, value)
             data.append(line)
         return data
 
