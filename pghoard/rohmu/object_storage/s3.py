@@ -17,7 +17,7 @@ import time
 def calculate_chunk_size():
     total_mem_mib = get_total_memory() or 0
     # At least 5 MiB, at most 524 MiB. Max block size used for hosts with ~300+ GB of memory
-    return max(min(int(total_mem_mib / 600), 524), 5) * 1024 * 1024
+    return max(min(int(total_mem_mib / 600), 524), 5) * 1024 * 1024 * 2
 
 
 # Set chunk size based on host memory. S3 supports up to 10k chunks and up to 5 TiB individual
